@@ -1,0 +1,39 @@
+# Local Python environment
+.venv/
+
+# Dataset - managed by DVC, not required by serving container
+data/
+
+# MLflow local tracking outputs
+mlruns/
+mlartifacts/
+mlflow.db
+
+# Git metadata
+.git/
+.gitignore
+
+# DVC cache / local metadata
+.dvc/cache/
+.dvc/tmp/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Development/test caches
+.pytest_cache/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Reports and notebooks are not required at runtime
+lab/
+
+# OS files
+.DS_Store
+Thumbs.db
