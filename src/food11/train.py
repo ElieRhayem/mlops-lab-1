@@ -1,15 +1,15 @@
-from pathlib import Path
 import argparse
+from pathlib import Path
 
-import mlflow
 import mlflow.pytorch
 import torch
 from torch import nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from torchvision.models import resnet18, ResNet18_Weights
+from torchvision.models import ResNet18_Weights, resnet18
 
+import mlflow
 
 # ---------------------------------------------------------
 # Project paths
@@ -456,7 +456,7 @@ def main():
         )
 
         print(
-            f"\nTraining completed."
+            "\nTraining completed."
         )
 
         print(

@@ -1,30 +1,37 @@
-from pathlib import Path
+import hashlib
 import shutil
+from pathlib import Path
 
 from PIL import Image
 
+CLASSES = [
+    "Bread",
+    "Dairy product",
+    "Dessert",
+    "Egg",
+    "Fried food",
+    "Meat",
+    "Noodles-Pasta",
+    "Rice",
+    "Seafood",
+    "Soup",
+    "Vegetable-Fruit",
+]
 
 CATEGORIES = {
-    0: "Bread",
-    1: "Dairy product",
-    2: "Dessert",
-    3: "Egg",
-    4: "Fried food",
-    5: "Meat",
-    6: "Noodles-Pasta",
-    7: "Rice",
-    8: "Seafood",
-    9: "Soup",
-    10: "Vegetable-Fruit",
+    index: category
+    for index, category in enumerate(CLASSES)
 }
 
-SPLITS = ("training", "evaluation", "validation")
+SPLITS = (
+    "training",
+    "validation",
+    "evaluation",
+)
 
-IMAGE_SIZE = (128, 128)
+IMAGE_SIZE = 128
 MAX_MINI_IMAGES_PER_CATEGORY = 100
 
-# data.py is located at:
-# repo_root/src/food11/data.py
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 DATA_DIR = PROJECT_ROOT / "data"
@@ -33,41 +40,19 @@ RAW_DIR = DATA_DIR / "food11_raw"
 PROCESSED_DIR = DATA_DIR / "food11_processed"
 MINI_DIR = DATA_DIR / "food11_processed_mini"
 
-VALID_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+VALID_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+}
 
 
-def prepare_output_directories():
+def category_from_filename(filename: str) -> str:
     """
-    Delete previously generated processed datasets so that every run starts
-    from a clean state, then recreate the required directory structure.
-    """
-
-    if PROCESSED_DIR.exists():
-        shutil.rmtree(PROCESSED_DIR)
-
-    if MINI_DIR.exists():
-        shutil.rmtree(MINI_DIR)
-
-    for split in SPLITS:
-        for category in CATEGORIES.values():
-            (PROCESSED_DIR / split / category).mkdir(
-                parents=True,
-                exist_ok=True,
-            )
-
-            (MINI_DIR / split / category).mkdir(
-                parents=True,
-                exist_ok=True,
-            )
-
-
-def get_category_from_filename(filename: str) -> str:
-    """
-    Food-11 filenames begin with the numerical class label.
+    Convert a Food-11 filename into its category.
 
     Example:
-        0_123.jpg -> Bread
-        5_456.jpg -> Meat
+        3_120.jpg -> Egg
     """
 
     stem = Path(filename).stem
@@ -77,35 +62,70 @@ def get_category_from_filename(filename: str) -> str:
         label = int(label_text)
     except ValueError as exc:
         raise ValueError(
-            f"Could not determine category from filename: {filename}"
+            f"Could not determine category from filename: "
+            f"{filename}"
         ) from exc
 
     if label not in CATEGORIES:
         raise ValueError(
-            f"Unknown category label {label} in file: {filename}"
+            f"Unknown category label {label} "
+            f"in file: {filename}"
         )
 
     return CATEGORIES[label]
 
 
-def resize_and_save(source: Path, destination: Path):
+def resize_image(
+    img: Image.Image,
+    size: int = IMAGE_SIZE,
+) -> Image.Image:
     """
-    Open an image, convert it to RGB, resize to 128x128,
-    and save it to the requested destination.
+    Convert an image to RGB and resize it
+    to size x size.
     """
 
-    with Image.open(source) as image:
-        image = image.convert("RGB")
-
-        image = image.resize(
-            IMAGE_SIZE,
-            Image.Resampling.LANCZOS,
-        )
-
-        image.save(destination)
+    return img.convert("RGB").resize(
+        (size, size),
+        Image.Resampling.LANCZOS,
+    )
 
 
-def process_split(split: str):
+def prepare_output_directories():
+    if PROCESSED_DIR.exists():
+        shutil.rmtree(PROCESSED_DIR)
+
+    if MINI_DIR.exists():
+        shutil.rmtree(MINI_DIR)
+
+    for split in SPLITS:
+        for category in CLASSES:
+            (
+                PROCESSED_DIR
+                / split
+                / category
+            ).mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            (
+                MINI_DIR
+                / split
+                / category
+            ).mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+def file_hash(path: Path) -> str:
+    return hashlib.md5(
+        path.read_bytes()
+    ).hexdigest()
+
+def process_split(
+    split: str,
+    seen_hashes: set[str],
+):
     input_dir = RAW_DIR / split
 
     if not input_dir.exists():
@@ -115,7 +135,7 @@ def process_split(split: str):
 
     mini_counts = {
         category: 0
-        for category in CATEGORIES.values()
+        for category in CLASSES
     }
 
     total_processed = 0
@@ -128,7 +148,23 @@ def process_split(split: str):
     )
 
     for image_path in image_files:
-        category = get_category_from_filename(image_path.name)
+        digest = file_hash(image_path)
+
+        if digest in seen_hashes:
+            print(
+                f"  Skipping duplicate: "
+                f"{image_path.name}"
+            )
+            continue
+
+        seen_hashes.add(digest)
+
+        category = category_from_filename(
+            image_path.name
+        )
+        category = category_from_filename(
+            image_path.name
+        )
 
         processed_destination = (
             PROCESSED_DIR
@@ -137,16 +173,18 @@ def process_split(split: str):
             / image_path.name
         )
 
-        resize_and_save(
-            image_path,
-            processed_destination,
-        )
+        with Image.open(image_path) as image:
+            processed_image = resize_image(image)
+            processed_image.save(
+                processed_destination
+            )
 
         total_processed += 1
 
-        # Copy no more than 100 images from each category
-        # into the mini development dataset.
-        if mini_counts[category] < MAX_MINI_IMAGES_PER_CATEGORY:
+        if (
+            mini_counts[category]
+            < MAX_MINI_IMAGES_PER_CATEGORY
+        ):
             mini_destination = (
                 MINI_DIR
                 / split
@@ -162,30 +200,54 @@ def process_split(split: str):
             mini_counts[category] += 1
 
     print(f"\n{split}:")
-    print(f"  Processed images: {total_processed}")
+    print(
+        f"  Processed images: {total_processed}"
+    )
 
     for category, count in mini_counts.items():
-        print(f"  Mini {category}: {count}")
+        print(
+            f"  Mini {category}: {count}"
+        )
 
 
 def main():
     if not RAW_DIR.exists():
         raise FileNotFoundError(
-            f"Raw dataset was not found at: {RAW_DIR}"
+            f"Raw dataset was not found at: "
+            f"{RAW_DIR}"
         )
 
     print("Preparing Food-11 dataset...")
     print(f"Raw dataset: {RAW_DIR}")
-    print(f"Output size: {IMAGE_SIZE[0]}x{IMAGE_SIZE[1]}")
+    print(
+        f"Output size: "
+        f"{IMAGE_SIZE}x{IMAGE_SIZE}"
+    )
 
     prepare_output_directories()
 
+    seen_hashes: set[str] = set()
+    
     for split in SPLITS:
-        process_split(split)
+        process_split(
+            split,
+            seen_hashes,
+        )
 
-    print("\nDataset preparation completed successfully.")
-    print(f"Processed dataset: {PROCESSED_DIR}")
-    print(f"Mini dataset: {MINI_DIR}")
+    print(
+        "\nDataset preparation "
+        "completed successfully."
+    )
+
+    print(
+        f"Processed dataset: "
+        f"{PROCESSED_DIR}"
+    )
+
+    print(
+        f"Mini dataset: "
+        f"{MINI_DIR}"
+    )
 
 
 if __name__ == "__main__":

@@ -1,30 +1,26 @@
 import io
 import os
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-import mlflow
 import mlflow.pyfunc
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    UploadFile,
+)
 from PIL import Image
 from torchvision import transforms
 
+import mlflow
+from src.food11.data import CLASSES
 
-MODEL_URI = os.getenv("MODEL_URI", "models:/food11@champion")
-
-CATEGORIES = [
-    "Bread",
-    "Dairy product",
-    "Dessert",
-    "Egg",
-    "Fried food",
-    "Meat",
-    "Noodles-Pasta",
-    "Rice",
-    "Seafood",
-    "Soup",
-    "Vegetable-Fruit",
-]
+MODEL_URI = os.getenv(
+    "MODEL_URI",
+    "models:/food11@champion",
+)
 
 
 image_transform = transforms.Compose(
@@ -46,19 +42,42 @@ model = None
 async def lifespan(app: FastAPI):
     global model
 
+    if os.environ.get("SKIP_MODEL"):
+        print(
+            "SKIP_MODEL is set. "
+            "Skipping MLflow model loading."
+        )
+
+        yield
+
+        model = None
+        return
+
     tracking_uri = os.getenv(
         "MLFLOW_TRACKING_URI",
         "http://127.0.0.1:5000",
     )
 
-    print(f"MLflow tracking URI: {tracking_uri}")
-    print(f"Loading model: {MODEL_URI}")
+    print(
+        f"MLflow tracking URI: "
+        f"{tracking_uri}"
+    )
 
-    mlflow.set_tracking_uri(tracking_uri)
+    print(
+        f"Loading model: {MODEL_URI}"
+    )
 
-    model = mlflow.pyfunc.load_model(MODEL_URI)
+    mlflow.set_tracking_uri(
+        tracking_uri
+    )
 
-    print("Model loaded successfully.")
+    model = mlflow.pyfunc.load_model(
+        MODEL_URI
+    )
+
+    print(
+        "Model loaded successfully."
+    )
 
     yield
 
@@ -67,7 +86,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Food-11 Classification API",
-    description="Classifies food images using the champion Food-11 model.",
+    description=(
+        "Classifies Food-11 images."
+    ),
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -75,11 +96,18 @@ app = FastAPI(
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+    }
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(
+    file: Annotated[
+        UploadFile,
+        File(...),
+    ],
+):
     if model is None:
         raise HTTPException(
             status_code=503,
@@ -96,26 +124,37 @@ async def predict(file: UploadFile = File(...)):
     except Exception as exc:
         raise HTTPException(
             status_code=400,
-            detail="The uploaded file is not a valid image.",
+            detail=(
+                "The uploaded file is "
+                "not a valid image."
+            ),
         ) from exc
 
-    # Apply exactly the same preprocessing used during training.
-    image_tensor = image_transform(image)
+    image_tensor = image_transform(
+        image
+    )
 
-    # MLflow's PyTorch pyfunc wrapper accepts NumPy tensor input.
-    batch = image_tensor.unsqueeze(0).numpy().astype(
-        np.float32
+    batch = (
+        image_tensor
+        .unsqueeze(0)
+        .numpy()
+        .astype(np.float32)
     )
 
     try:
-        raw_prediction = model.predict(batch)
+        raw_prediction = model.predict(
+            batch
+        )
+
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Model inference failed: {exc}",
+            detail=(
+                f"Model inference failed: "
+                f"{exc}"
+            ),
         ) from exc
 
-    # ResNet returns logits for each of the 11 classes.
     logits = np.asarray(
         raw_prediction,
         dtype=np.float32,
@@ -124,10 +163,18 @@ async def predict(file: UploadFile = File(...)):
     if logits.ndim == 2:
         logits = logits[0]
 
-    # Numerically stable softmax.
-    shifted_logits = logits - np.max(logits)
-    exp_logits = np.exp(shifted_logits)
-    probabilities = exp_logits / np.sum(exp_logits)
+    shifted_logits = (
+        logits - np.max(logits)
+    )
+
+    exp_logits = np.exp(
+        shifted_logits
+    )
+
+    probabilities = (
+        exp_logits
+        / np.sum(exp_logits)
+    )
 
     predicted_index = int(
         np.argmax(probabilities)
@@ -138,6 +185,8 @@ async def predict(file: UploadFile = File(...)):
     )
 
     return {
-        "category": CATEGORIES[predicted_index],
+        "category": CLASSES[
+            predicted_index
+        ],
         "confidence": confidence,
     }
