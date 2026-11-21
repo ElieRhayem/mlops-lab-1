@@ -72,7 +72,7 @@ def category_from_filename(filename: str) -> str:
             f"in file: {filename}"
         )
 
-    return CATEGORIES[label]
+    return "WRONG"
 
 
 def resize_image(
